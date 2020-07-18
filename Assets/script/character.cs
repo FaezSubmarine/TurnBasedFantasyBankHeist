@@ -12,7 +12,17 @@ public class character : MonoBehaviour,IClickable
     List<Node> path;
     bool currentlyMoving;
     [SerializeField] float moveSpeed;
+    [SerializeField] int priorityNum =1;
     // Start is called before the first frame update
+    int IClickable.getPriority()
+    {
+        return priorityNum;
+    }
+    bool IClickable.comparePriority(IClickable other)
+    {
+        if (other == null) return true;
+        return priorityNum >= other.getPriority();
+    }
     private void Awake()
     {
         path = new List<Node>();
@@ -20,6 +30,7 @@ public class character : MonoBehaviour,IClickable
         clickedIndicator.gameObject.SetActive(false);
 
         pathfinding = FindObjectOfType<Pathfinding>();
+
     }
     void Start()
     {
@@ -29,7 +40,15 @@ public class character : MonoBehaviour,IClickable
     // Update is called once per frame
     void Update()
     {
-        
+
+
+    }
+    public void settingRend(bool setting)
+    {
+        foreach (SkinnedMeshRenderer eachRend in GetComponentsInChildren<SkinnedMeshRenderer>())
+        {
+            eachRend.enabled = setting;
+        }
     }
     Node getCurrentNode()
     {
@@ -85,6 +104,7 @@ public class character : MonoBehaviour,IClickable
         if (!selected) return false;
         if (currentlyMoving) return true;
         Node node = subject.GetComponent<Node>();
+        if (node == null) return false;
         if(node == currentNode)
         {
             StartCoroutine(movingOnPath());

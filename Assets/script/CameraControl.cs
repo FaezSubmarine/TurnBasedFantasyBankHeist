@@ -13,13 +13,16 @@ public class CameraControl : MonoBehaviour
     [SerializeField]float moveSpeed;
     [SerializeField] float rotateSpeed = 10;
     public Camera cam { get; private set; }
-    IClickable cursorItem;
+    IClickable oldCursorItem;
     IClickable clickedItem;
     public Vector2 cursorPos { get; private set; }
-    int numOfFloor;
+    Vector2 oldCursorPos;
+    [SerializeField] float maxDeltaChange = 0.01f;
+    //int numOfFloor;
     [SerializeField]int currentFloor;
-    float floorHeight;
-
+    int prevFloor = 0;
+    //float floorHeight;
+    //todo: disable nodes on other floors
     [SerializeField]float decayTime;
     [SerializeField] float cappedSpeed;
     AccelerationFloat Xaccel, Zaccel;
@@ -28,6 +31,9 @@ public class CameraControl : MonoBehaviour
     List<Transform> singleRend;
 
     RaycastHit[] oldHits;
+    RaycastHit[] oldFloorHits;
+
+    Grid grid;
     private void Awake()
     {
         cam = Camera.main;
@@ -35,17 +41,32 @@ public class CameraControl : MonoBehaviour
         Zaccel = new AccelerationFloat(decayTime*Time.deltaTime,cappedSpeed);
 
         singleRend = new List<Transform>();
+        grid = FindObjectOfType<Grid>();
     }
     // Start is called before the first frame update
     void Start()
     {
-        Grid grid = FindObjectOfType<Grid>();
-        numOfFloor = grid.numOfFloor;
-        floorHeight = grid._floorHeight;
         if (currentFloor != 0)
         {
-            transform.Translate(0, currentFloor * floorHeight, 0);
+            transform.Translate(0, currentFloor * grid._floorHeight, 0);
         }
+        changeCurrentFloorFade();
+    }
+    //TODO: the camera is attach to the character
+    private void changeCurrentFloorFade()
+    {
+        for(int i = currentFloor; i < grid.numOfFloor; ++i)
+        {
+            foreach (Node floorNode in grid.floorNodeDict[i])
+            {
+                floorNode.setRendSettings(false);
+            }
+        }
+        foreach (Node floorNode in grid.floorNodeDict[currentFloor])
+        {
+            floorNode.setRendSettings(true);
+        }
+        prevFloor = currentFloor;
     }
 
     // Update is called once per frame
@@ -54,7 +75,11 @@ public class CameraControl : MonoBehaviour
         Xaccel.addAcceleration(moveVec.x * moveSpeed);
         Zaccel.addAcceleration(moveVec.y * moveSpeed);
         transform.Translate(new Vector3(Xaccel.getFinalSpeed(),0, Zaccel.getFinalSpeed()));
-        hovering();
+        if (Vector2.SqrMagnitude(cursorPos - oldCursorPos) >maxDeltaChange*maxDeltaChange)
+        {
+            hovering();
+        }
+        oldCursorPos = cursorPos;
     }
 
     public void zoomAction(InputAction.CallbackContext context)
@@ -75,140 +100,122 @@ public class CameraControl : MonoBehaviour
         Debug.DrawRay(ray.origin, ray.direction*300, Color.blue);
         //todo:50 is a magic number, but how to measure the correct distance?
         RaycastHit[] hits = Physics.RaycastAll(ray, 300);
-
-        //todo: First, extract this bit out, then make it so its fading out and in
+        
+        //OBJECT FADE BACK INTO EXISTENCE
         if (oldHits != null && oldHits.SequenceEqual(hits) == false)
         {
-            string oldHitsDebug = "oldHits: ";
-            string newHitsDebug = "newHits ";
-            foreach (RaycastHit oldbruh in oldHits)
-            {
-                oldHitsDebug += oldbruh.transform.name + " ";
-            }
-            foreach (RaycastHit newBruh in hits)
-            {
-                newHitsDebug += newBruh.transform.name + " ";
-            }
-            Debug.Log(oldHitsDebug + " " + newHitsDebug);
-            IEnumerable<RaycastHit> diff = oldHits.Except(hits);
-
-            foreach (RaycastHit diffHit in diff)
-            {
-                Renderer diffRend = diffHit.transform.GetComponent<Renderer>();
-                if (diffHit.transform.gameObject.layer != 9 && diffRend)
-                {
-                    if (diffRend.transform.childCount > 0)
-                    {
-                        foreach (Transform child in diffRend.transform)
-                        {
-                            child.GetComponent<Renderer>().enabled = true;
-                        }
-                    }
-                    diffRend.enabled = true;
-                }
-            }
+            fadeObjectsIn(hits);
         }
-
-        IClickable thisItem = null;
+        //CLICKABLE STUFF
+        IClickable newCursorItem = null;
         foreach (RaycastHit oneHit in hits)
         {
-            thisItem = oneHit.transform.GetComponent<IClickable>();
-            if (thisItem != null)
+            IClickable thisItem = oneHit.transform.GetComponent<IClickable>();
+            if (thisItem != null && thisItem.comparePriority(newCursorItem))
             {
-                if (cursorItem != null)
-                {
-                    cursorItem.cursorExit();
-                    cursorItem = null;
-                }
-                thisItem = oneHit.transform.GetComponent<IClickable>();
-                thisItem.cursorEnter();
-                cursorItem = thisItem;
-                continue;
+                newCursorItem = thisItem;
             }
-            else
-            {
-                thisItem = null;
-            }
-            Renderer rend = oneHit.transform.GetComponent<Renderer>();
-            if (oneHit.transform.gameObject.layer != 9 && rend)
-            {
 
-                //singleRend.Add(rend.transform);
-                if (rend.transform.childCount > 0)
+            Renderer rend = oneHit.transform.GetComponent<Renderer>();
+            if (thisItem == null && oneHit.transform.gameObject.layer != 9 && rend)
+            {
+                fadeObjectsOut(rend);
+            }
+            else if (thisItem == null && oneHit.transform.gameObject.layer == 9)
+            {
+                fadeForFloor(oneHit);
+            }
+        }
+        if( newCursorItem != null && oldCursorItem != newCursorItem) {
+            if (oldCursorItem != null)
+            {
+                oldCursorItem.cursorExit();
+            }
+            newCursorItem.cursorEnter();
+            oldCursorItem = newCursorItem;
+        }
+        if (newCursorItem == null && oldCursorItem != null)
+        {
+            oldCursorItem.cursorExit();
+            oldCursorItem = null;
+        }
+        oldHits = hits;
+    }
+
+    //todo: CHANGE IT SO THAT IF THE CAMERA IS THE ONE THAT MAKES IT FADE
+    private void fadeForFloor(RaycastHit oneHit)
+    {
+        Vector3 testPoint = oneHit.point;
+        testPoint.y = (currentFloor + 0.5f) * grid._floorHeight;
+        Ray floorRayUp = new Ray(testPoint, Vector3.up);
+        //Debug.DrawRay(floorRayUp.origin, floorRayUp.direction,Color.blue);
+        RaycastHit[] testForFloorUp = Physics.RaycastAll(floorRayUp, 100, 1 << 9 | 1<<8);
+
+        if (oldFloorHits != null && oldFloorHits.SequenceEqual(testForFloorUp) == false)
+        {
+            IEnumerable<RaycastHit> diffFloor = oldFloorHits.Except(testForFloorUp);
+            foreach (RaycastHit oneDiffFloor in diffFloor)
+            {
+                switch (oneDiffFloor.transform.gameObject.layer)
                 {
-                    foreach(Transform child in rend.transform)
+                    case 9:
+                        oneDiffFloor.transform.GetComponent<Renderer>().enabled = true;
+                        break;
+                    case 8:
+                        oneDiffFloor.transform.GetComponent<character>().settingRend(true);
+                        break;
+                }
+            }
+        }
+        foreach (RaycastHit floorHit in testForFloorUp)
+        {
+            switch (floorHit.transform.gameObject.layer)
+            {
+                case 9:
+                    floorHit.transform.GetComponent<Renderer>().enabled = false;
+                    break;
+                case 8:
+                    floorHit.transform.GetComponent<character>().settingRend(false);
+                    break;
+            }
+        }
+        oldFloorHits = testForFloorUp;
+    }
+
+    private void fadeObjectsOut(Renderer rend)
+    {
+        if (rend.transform.childCount > 0)
+        {
+            foreach (Transform child in rend.transform)
+            {
+                child.GetComponent<Renderer>().enabled = false;
+            }
+        }
+        rend.enabled = false;
+    }
+
+    private void fadeObjectsIn(RaycastHit[] hits)
+    {
+        IEnumerable<RaycastHit> diff = oldHits.Except(hits);
+
+        foreach (RaycastHit diffHit in diff)
+        {
+            Renderer diffRend = diffHit.transform.GetComponent<Renderer>();
+            if (diffHit.transform.gameObject.layer != 9 && diffRend)
+            {
+                if (diffRend.transform.childCount > 0)
+                {
+                    foreach (Transform child in diffRend.transform)
                     {
-                        child.GetComponent<Renderer>().enabled = false;
+                        child.GetComponent<Renderer>().enabled = true;
                     }
                 }
-                rend.enabled = false;
-            }
-        }
-        if (thisItem == null && cursorItem != null)
-        {
-            cursorItem.cursorExit();
-            cursorItem = null;
-        }
-        //it does work but it flickers...
-        //if (oldHits != null && oldHits.SequenceEqual(hits) == false)
-        //{
-        //    string oldHitsDebug = "oldHits: ";
-        //    string newHitsDebug = "newHits ";
-        //    foreach(RaycastHit oldbruh in oldHits)
-        //    {
-        //        oldHitsDebug += oldbruh.transform.name+" ";
-        //    }
-        //    foreach(RaycastHit newBruh in hits)
-        //    {
-        //        newHitsDebug += newBruh.transform.name+" ";
-        //    }
-        //    Debug.Log(oldHitsDebug + " " + newHitsDebug);
-        //    IEnumerable<RaycastHit> diff = oldHits.Except(hits);
-
-        //    foreach(RaycastHit diffHit in diff)
-        //    {
-        //        Renderer diffRend = diffHit.transform.GetComponent<Renderer>();
-        //        if(diffHit.transform.gameObject.layer != 9 && diffRend)
-        //        {
-        //            if (diffRend.transform.childCount > 0)
-        //            {
-        //                foreach (Transform child in diffRend.transform)
-        //                {
-        //                    child.GetComponent<Renderer>().enabled = true;
-        //                }
-        //            }
-        //            diffRend.enabled = true;
-        //        }
-        //    }
-        //}
-        oldHits = hits;
-        return;
-
-
-
-        RaycastHit hit;
-        if (Physics.Raycast(ray, out hit))
-        {
-            if (hit.transform.GetComponent<IClickable>() != null)
-            {
-                if (cursorItem != null)
-                {
-                    cursorItem.cursorExit();
-                    cursorItem = null;
-                }
-                cursorItem = hit.transform.GetComponent<IClickable>();
-                cursorItem.cursorEnter();
-            }
-        }
-        else
-        {
-            if (cursorItem != null)
-            {
-                cursorItem.cursorExit();
-                cursorItem = null;
+                if (diffRend.GetComponent<IClickable>() == null)
+                    diffRend.enabled = true;
             }
         }
     }
+
     public void moveCam(InputAction.CallbackContext context)
     {
         moveVec = context.ReadValue<Vector2>();
@@ -224,19 +231,19 @@ public class CameraControl : MonoBehaviour
         {
             return;
         }
-        if (clickedItem!= null && cursorItem != null && 
-            clickedItem.checkedPrevItem(cursorItem.getGameObject()))
+        if (clickedItem!= null && oldCursorItem != null && 
+            clickedItem.checkedPrevItem(oldCursorItem.getGameObject()))
         {
             return;
         }
-        if(clickedItem != null && cursorItem != clickedItem)
+        if(clickedItem != null && oldCursorItem != clickedItem)
         {
             clickedItem.deselect();
         }
-        if(cursorItem != null)
+        if(oldCursorItem != null)
         {
-            cursorItem.leftClick();
-            clickedItem = cursorItem;
+            oldCursorItem.leftClick();
+            clickedItem = oldCursorItem;
         }
     }
     float getSinResult(float x)
@@ -260,11 +267,12 @@ public class CameraControl : MonoBehaviour
         }
         int deltaChange = (int)context.ReadValue<float>();
         //Debug.Log("delta change " + deltaChange);
-        if (currentFloor+deltaChange == Mathf.Clamp(currentFloor + deltaChange, 0, numOfFloor))
+        if (currentFloor+deltaChange == Mathf.Clamp(currentFloor + deltaChange, 0, grid.numOfFloor))
         {
             currentFloor += deltaChange;
-            transform.Translate(0, deltaChange * floorHeight, 0);
+            transform.Translate(0, deltaChange * grid._floorHeight, 0);
         }
+        changeCurrentFloorFade();
     }
     IEnumerator rotateAction(Vector3 ogRot, float yAdd)
     {

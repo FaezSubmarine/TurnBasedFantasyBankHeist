@@ -4,6 +4,8 @@ using UnityEngine;
 
 public interface IClickable
 {
+    int getPriority();
+    bool comparePriority(IClickable other);
     GameObject getGameObject();
     void cursorEnter();
     void cursorExit();
@@ -11,5 +13,4 @@ public interface IClickable
     void leftClick();
     void deselect();
     bool checkedPrevItem(GameObject subject);
-    
 }

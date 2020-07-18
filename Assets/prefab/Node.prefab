@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 4071413062288494333}
   - component: {fileID: 5516279842480543960}
   m_Layer: 5
-  m_Name: Quad
+  m_Name: Node
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -113,6 +113,7 @@ MonoBehaviour:
   gCost: 0
   hCost: 0
   parent: {fileID: 0}
+  walkable: 1
   unselectedColor: {r: 0.46226418, g: 0.46226418, b: 0.46226418, a: 0.49019608}
   hoveredColor: {r: 1, g: 1, b: 1, a: 1}
   unwalkableColor: {r: 1, g: 0, b: 0, a: 1}

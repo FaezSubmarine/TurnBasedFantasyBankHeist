@@ -6,8 +6,8 @@ public class Grid : MonoBehaviour {
 	public LayerMask unwalkableMask;
 	[SerializeField] Vector3 gridWorldSize;
 	public float nodeRadius;
-    Node[,] grid;
-
+    public Node[,] grid { get; private set; }
+    public Dictionary<int, List<Node>> floorNodeDict;
     float nodeDiameter;
 	int gridSizeX,gridSizeZ;
     [SerializeField]float floorHeight;
@@ -28,13 +28,17 @@ public class Grid : MonoBehaviour {
 		gridSizeX = Mathf.RoundToInt(gridWorldSize.x/nodeDiameter);
         gridSizeZ = Mathf.RoundToInt(gridWorldSize.z/nodeDiameter);
         numOfFloor =(int) (gridWorldSize.y / floorHeight);
-		CreateGrid();
+
+        floorNodeDict = new Dictionary<int, List<Node>>();
+        CreateGrid();
+
 	}
     public int maxSize()
     {
         return gridSizeX * numOfFloor * gridSizeZ* numOfFloor;
     }
     //todo: update grid based on environment moving?
+    //Cast ray down from a floorHeight to see if theres a walkable layered object below
     bool checkForWalkable(ref Vector3 worldPoint, float floorHeight)
     {
         Ray ray = new Ray(worldPoint, Vector3.down);
@@ -53,6 +57,7 @@ public class Grid : MonoBehaviour {
         for (float y = floorHeight; y <= gridWorldSize.y; y += floorHeight)
         {
             ++currentFloor;
+            floorNodeDict[currentFloor-1] = new List<Node>();
             for (int x = 0; x < gridSizeX; x++)
             {
                 for (int z = 0; z < gridSizeZ; z++)
@@ -65,9 +70,10 @@ public class Grid : MonoBehaviour {
                     }
                     bool walkable = !(Physics.CheckBox(worldPoint, new Vector3(nodeRadius / 4 - 0.1f, 0.03f, nodeRadius / 4 - 0.1f), Quaternion.identity, ~(1 << 5 | 1 << 8)));
                     
-                    //todo: leave the node inside walkable to be red or delete entirely? Can walkable be edited at all for destructible terrain?
-                     grid[x * currentFloor, z * currentFloor] = Instantiate(gridMat, worldPoint, gridMat.rotation, transform).GetComponent<Node>();
-                     grid[x * currentFloor, z * currentFloor].setNode(worldPoint, x, z, currentFloor,walkable);
+                    grid[x * currentFloor, z * currentFloor] = Instantiate(gridMat, worldPoint, gridMat.rotation, transform).GetComponent<Node>();
+                    grid[x * currentFloor, z * currentFloor].setNode(worldPoint, x, z, currentFloor,walkable);
+                    floorNodeDict[currentFloor - 1].Add(grid[x * currentFloor, z * currentFloor]);
+                    grid[x * currentFloor, z * currentFloor].rend.enabled = false;
                 }
             }
         }

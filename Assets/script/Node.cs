@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 public class Node : MonoBehaviour, IHeapItem<Node>,IClickable {
-    //TODO: Next, do a hover and click interface
 	public Vector3 worldPosition;
 	public int gridX;
 	public int gridZ;
@@ -11,12 +10,42 @@ public class Node : MonoBehaviour, IHeapItem<Node>,IClickable {
 	public float hCost;
 	public Node parent;
     public bool walkable = true;
+    [SerializeField] int priorityNum = 0;
     [SerializeField] Color unselectedColor, hoveredColor,unwalkableColor;
-    Renderer rend;
+    public Renderer rend { get; private set; }
 
     List<Node> currentNeighbour = new List<Node>();
 
     bool persistentHighlight;
+    int IClickable.getPriority()
+    {
+        return priorityNum;
+    }
+    public void setRendSettings(bool setting)
+    {
+        if (setting)
+        {
+            rend.enabled = true;
+            if (rend.material.color == hoveredColor && !persistentHighlight)
+            {
+                rend.material.color = unselectedColor;
+            }
+        }
+        else
+        {
+            rend.enabled = false;
+        }
+    }
+    bool IClickable.comparePriority(IClickable other)
+    {
+        if (other == null) return true;
+        //TODO: highlighting nodes at different height
+        if (other is Node)
+        {
+            return transform.position.y > other.getGameObject().transform.position.y;
+        }
+        return priorityNum>= other.getPriority();
+    }
     void Awake()
     {
         rend = GetComponent<Renderer>();
@@ -53,6 +82,10 @@ public class Node : MonoBehaviour, IHeapItem<Node>,IClickable {
         {
             return;
         }
+        if (!rend.enabled)
+        {
+            return;
+        }
         this.persistentHighlight = persistentHighlight;
         rend.material.color = hoveredColor;
 
@@ -67,7 +100,12 @@ public class Node : MonoBehaviour, IHeapItem<Node>,IClickable {
         {
             return;
         }
+        //if (!rend.enabled)
+        //{
+        //    return;
+        //}
         persistentHighlight = false;
+
         rend.material.color = unselectedColor;
     }
     void IClickable.cursorEnter()
